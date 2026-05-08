@@ -538,6 +538,25 @@ Specification 的定位是：当查询条件复杂、组合多、并且你需要
 
 接口：`GET /api/tx-lab/propagation/required`
 
+- 时间线（从上到下按时间推进）：
+
+```text
+时间 →
+
+Controller(无事务)         Outer Tx (REQUIRED)                          Inner Tx
+-----------------------------------------------------------------------------------------
+调用 outer.requiredRollbackDemo()
+                          BEGIN Tx-A
+                          saveAndFlush(outer)  -> INSERT 已执行，但未 COMMIT（仍在 Tx-A）
+                          调用 inner.requiredFailRuntime()
+                                                                       加入 Tx-A（不新开）
+                                                                       抛 RuntimeException
+                          Tx-A 标记为 ROLLBACK
+                          ROLLBACK Tx-A（outer 插入撤销）
+返回 Controller
+existsAfterCall = existsByName(outerName) -> false
+```
+
 - 要观察什么
   - 接口会返回内部抛出的异常信息
   - `existsAfterCall` 预期为 `false`（外层插入也被回滚）
@@ -551,6 +570,30 @@ Specification 的定位是：当查询条件复杂、组合多、并且你需要
 
 接口：`GET /api/tx-lab/propagation/requires-new`
 
+- 时间线（从上到下按时间推进）：
+
+```text
+时间 →
+
+Controller(无事务)         Outer Tx (REQUIRED)                          Inner Tx (REQUIRES_NEW)
+-----------------------------------------------------------------------------------------------
+调用 outer.requiresNewDemo()
+                          BEGIN Tx-A
+                          saveAndFlush(outer) -> INSERT 已执行，但未 COMMIT（仍在 Tx-A）
+                          调用 inner.requiresNewInsertAndFail()
+                          SUSPEND Tx-A
+                                                                       BEGIN Tx-B（新事务）
+                                                                       saveAndFlush(inner) -> INSERT 属于 Tx-B
+                                                                       抛 RuntimeException
+                                                                       ROLLBACK Tx-B（inner 插入撤销）
+                          RESUME Tx-A
+                          catch 异常，方法正常结束
+                          COMMIT Tx-A（outer 插入生效）
+返回 Controller
+outerExistsAfterCall = true
+innerExistsAfterCall = false
+```
+
 - 要观察什么
   - `outerExistsAfterCall` 预期为 `true`
   - `innerExistsAfterCall` 预期为 `false`
@@ -563,6 +606,27 @@ Specification 的定位是：当查询条件复杂、组合多、并且你需要
 #### C. NOT_SUPPORTED：挂起事务，用“非事务方式”执行
 
 接口：`GET /api/tx-lab/propagation/not-supported`
+
+- 时间线（从上到下按时间推进）：
+
+```text
+时间 →
+
+Controller(无事务)         Outer Tx (REQUIRED)                          Inner(非事务 NOT_SUPPORTED)
+-----------------------------------------------------------------------------------------------
+调用 outer.notSupportedVisibilityDemo()
+                          BEGIN Tx-A
+                          saveAndFlush(outer) -> INSERT 已执行，但未 COMMIT（仍在 Tx-A）
+                          调用 inner.countByNameNotSupported()
+                          SUSPEND Tx-A
+                                                                       非事务查询 countByName
+                                                                       读不到 Tx-A 未提交数据 -> 返回 0
+                          RESUME Tx-A
+                          COMMIT Tx-A（outer 插入生效）
+返回 Controller
+countByNameDuringNotSupported = 0
+existsAfterCall = true
+```
 
 - 要观察什么
   - `countByNameDuringNotSupported` 预期为 `0`（内层查询看不到外层尚未提交的数据）

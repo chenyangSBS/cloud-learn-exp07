@@ -17,6 +17,7 @@ import cs.sbs.web.repository.CourseJdbcRepository;
 import cs.sbs.web.repository.CourseRepository;
 import cs.sbs.web.service.CourseService;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -153,7 +154,20 @@ public class CourseServiceImpl implements CourseService {
             if (request.maxLessonCount() != null) {
                 predicates.add(cb.lessThanOrEqualTo(root.get("lessonCount"), request.maxLessonCount()));
             }
-            return cb.and(predicates.toArray(new Predicate[0]));
+            Predicate restriction = cb.and(predicates.toArray(new Predicate[0]));
+
+            if (query.getResultType() != Long.class && query.getResultType() != long.class) {
+                @SuppressWarnings("unchecked")
+                CriteriaQuery<Course> courseQuery = (CriteriaQuery<Course>) query;
+                courseQuery.select(root).distinct(true);
+                if (courseQuery.getOrderList().isEmpty()) {
+                    courseQuery.orderBy(cb.desc(root.get("createdAt")));
+                }
+                courseQuery.where(restriction);
+                return courseQuery.getRestriction();
+            }
+
+            return restriction;
         };
         return toPageResponse(courseRepository.findAll(specification, pageable));
     }
