@@ -5,7 +5,9 @@ import cs.sbs.web.dto.CourseBatchPublishRequest;
 import cs.sbs.web.dto.CourseCreateRequest;
 import cs.sbs.web.dto.CoursePageResponse;
 import cs.sbs.web.dto.CourseQueryRequest;
+import cs.sbs.web.dto.CourseQbeQueryRequest;
 import cs.sbs.web.dto.CourseResponse;
+import cs.sbs.web.dto.CourseSpecQueryRequest;
 import cs.sbs.web.dto.CourseSqlViewResponse;
 import cs.sbs.web.dto.SqlUpdateResponse;
 import cs.sbs.web.service.CourseService;
@@ -58,6 +60,48 @@ public class CourseController {
             @RequestParam(required = false) Integer size) {
         CourseQueryRequest queryRequest = new CourseQueryRequest(keyword, categoryId, published, page, size);
         return ApiResponse.ok("课程分页查询成功", courseService.search(queryRequest));
+    }
+
+    @GetMapping("/qbe")
+    public ApiResponse<CoursePageResponse> qbeSearch(
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String teacher,
+            @RequestParam(required = false) Boolean published,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        CourseQbeQueryRequest request = new CourseQbeQueryRequest(title, teacher, published, page, size);
+        return ApiResponse.ok("课程 QBE 查询成功", courseService.qbeSearch(request));
+    }
+
+    @GetMapping("/spec")
+    public ApiResponse<CoursePageResponse> specSearch(
+            @RequestParam(required = false) String titleKeyword,
+            @RequestParam(required = false) String teacherKeyword,
+            @RequestParam(required = false) Boolean published,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) Integer minLessonCount,
+            @RequestParam(required = false) Integer maxLessonCount,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String direction) {
+        CourseSpecQueryRequest request = new CourseSpecQueryRequest(
+                titleKeyword,
+                teacherKeyword,
+                published,
+                categoryId,
+                minPrice,
+                maxPrice,
+                minLessonCount,
+                maxLessonCount,
+                page,
+                size,
+                sortBy,
+                direction
+        );
+        return ApiResponse.ok("课程 Specification 查询成功", courseService.specSearch(request));
     }
 
     @GetMapping("/teachers")

@@ -4,7 +4,9 @@ import cs.sbs.web.dto.CourseCreateRequest;
 import cs.sbs.web.dto.CourseBatchPublishRequest;
 import cs.sbs.web.dto.CoursePageResponse;
 import cs.sbs.web.dto.CourseQueryRequest;
+import cs.sbs.web.dto.CourseQbeQueryRequest;
 import cs.sbs.web.dto.CourseResponse;
+import cs.sbs.web.dto.CourseSpecQueryRequest;
 import cs.sbs.web.dto.CourseSqlViewResponse;
 import cs.sbs.web.dto.SqlUpdateResponse;
 import java.math.BigDecimal;
@@ -17,6 +19,10 @@ public interface CourseService {
     CoursePageResponse browsePublishedCatalog(Long categoryId, Integer page, Integer size, String sortBy, String direction);
 
     CoursePageResponse search(CourseQueryRequest request);
+
+    CoursePageResponse qbeSearch(CourseQbeQueryRequest request);
+
+    CoursePageResponse specSearch(CourseSpecQueryRequest request);
 
     List<CourseResponse> findByTeacherKeyword(String teacherKeyword);
 

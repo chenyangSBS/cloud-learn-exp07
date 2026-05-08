@@ -10,8 +10,14 @@ import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 
 import lombok.AllArgsConstructor;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Sort.Direction;
+import org.springframework.data.domain.Sort.Order;
+import org.springframework.data.domain.Example;
+import org.springframework.data.domain.ExampleMatcher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
 @Transactional
@@ -61,6 +67,33 @@ public class CategoryServiceImpl implements CategoryService {
         return categoryRepository.findByParentIsNullOrderBySortOrderAscIdAsc()
                 .stream()
                 .map(this::toResponse)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CategoryResponse> qbeSearch(String name, String description) {
+        Category probe = new Category();
+        probe.setName(StringUtils.hasText(name) ? name.trim() : null);
+        probe.setDescription(StringUtils.hasText(description) ? description.trim() : null);
+        probe.setSortOrder(null);
+        probe.setChildren(null);
+        probe.setParent(null);
+
+        ExampleMatcher matcher = ExampleMatcher.matchingAll()
+                .withIgnoreNullValues()
+                .withIgnorePaths("id", "sortOrder", "children", "parent", "createdAt", "updatedAt")
+                .withIgnoreCase()
+                .withStringMatcher(ExampleMatcher.StringMatcher.CONTAINING);
+
+        Example<Category> example = Example.of(probe, matcher);
+
+        return categoryRepository.findAll(example, Sort.by(
+                        new Order(Direction.ASC, "sortOrder"),
+                        new Order(Direction.ASC, "id")
+                ))
+                .stream()
+                .map(this::toFlatResponse)
                 .toList();
     }
 

@@ -3,8 +3,10 @@ package cs.sbs.web.service.impl;
 import cs.sbs.web.dto.CourseBatchPublishRequest;
 import cs.sbs.web.dto.CourseCreateRequest;
 import cs.sbs.web.dto.CoursePageResponse;
+import cs.sbs.web.dto.CourseQbeQueryRequest;
 import cs.sbs.web.dto.CourseQueryRequest;
 import cs.sbs.web.dto.CourseResponse;
+import cs.sbs.web.dto.CourseSpecQueryRequest;
 import cs.sbs.web.dto.CourseSqlViewResponse;
 import cs.sbs.web.dto.SqlUpdateResponse;
 import cs.sbs.web.entity.Category;
@@ -23,6 +25,8 @@ import java.util.List;
 import java.util.Set;
 
 import lombok.AllArgsConstructor;
+import org.springframework.data.domain.Example;
+import org.springframework.data.domain.ExampleMatcher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -82,6 +86,76 @@ public class CourseServiceImpl implements CourseService {
         );
         Page<Course> page = courseRepository.findAll(buildSpecification(request), pageable);
         return toPageResponse(page);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoursePageResponse qbeSearch(CourseQbeQueryRequest request) {
+        Course probe = new Course();
+        probe.setTitle(StringUtils.hasText(request.title()) ? request.title().trim() : null);
+        probe.setTeacher(StringUtils.hasText(request.teacher()) ? request.teacher().trim() : null);
+        probe.setPublished(request.published());
+        probe.setSummary(null);
+        probe.setPrice(null);
+        probe.setLessonCount(null);
+        probe.setCategory(null);
+        probe.setCreatedAt(null);
+        probe.setUpdatedAt(null);
+
+        ExampleMatcher matcher = ExampleMatcher.matchingAll()
+                .withIgnoreNullValues()
+                .withIgnorePaths("id", "summary", "price", "lessonCount", "category", "createdAt", "updatedAt")
+                .withIgnoreCase()
+                .withStringMatcher(ExampleMatcher.StringMatcher.CONTAINING);
+
+        Example<Course> example = Example.of(probe, matcher);
+        Pageable pageable = PageRequest.of(
+                request.safePage(),
+                request.safeSize(),
+                Sort.by(Sort.Direction.DESC, "id")
+        );
+        return toPageResponse(courseRepository.findAll(example, pageable));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoursePageResponse specSearch(CourseSpecQueryRequest request) {
+        Pageable pageable = PageRequest.of(
+                request.safePage(),
+                request.safeSize(),
+                buildSort(request.sortBy(), request.direction())
+        );
+        Specification<Course> specification = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (StringUtils.hasText(request.titleKeyword())) {
+                String likeValue = "%" + request.titleKeyword().trim() + "%";
+                predicates.add(cb.like(root.get("title"), likeValue));
+            }
+            if (StringUtils.hasText(request.teacherKeyword())) {
+                String likeValue = "%" + request.teacherKeyword().trim() + "%";
+                predicates.add(cb.like(cb.lower(root.get("teacher")), likeValue.toLowerCase()));
+            }
+            if (request.published() != null) {
+                predicates.add(cb.equal(root.get("published"), request.published()));
+            }
+            if (request.categoryId() != null) {
+                predicates.add(cb.equal(root.get("category").get("id"), request.categoryId()));
+            }
+            if (request.minPrice() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("price"), request.minPrice()));
+            }
+            if (request.maxPrice() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("price"), request.maxPrice()));
+            }
+            if (request.minLessonCount() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("lessonCount"), request.minLessonCount()));
+            }
+            if (request.maxLessonCount() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("lessonCount"), request.maxLessonCount()));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return toPageResponse(courseRepository.findAll(specification, pageable));
     }
 
     @Override

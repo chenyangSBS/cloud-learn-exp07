@@ -14,9 +14,12 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.Example;
+import org.springframework.data.domain.ExampleMatcher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -91,5 +94,45 @@ class RepositoryAccessPatternTests {
         assertThat(affectedRows).isGreaterThan(0);
         assertThat(courseJdbcRepository.countCoursesThatWillBecomeNegative(categoryId, new BigDecimal("-9999.00")))
                 .isGreaterThan(0);
+    }
+
+    @Test
+    void qbeShouldSupportContainsIgnoreCaseSearch() {
+        Course probe = new Course();
+        probe.setTitle("spring");
+        probe.setTeacher(null);
+        probe.setPublished(null);
+        probe.setSummary(null);
+        probe.setPrice(null);
+        probe.setLessonCount(null);
+        probe.setCategory(null);
+        probe.setCreatedAt(null);
+        probe.setUpdatedAt(null);
+
+        ExampleMatcher matcher = ExampleMatcher.matchingAll()
+                .withIgnoreNullValues()
+                .withIgnorePaths("id", "summary", "price", "lessonCount", "category", "createdAt", "updatedAt")
+                .withIgnoreCase()
+                .withStringMatcher(ExampleMatcher.StringMatcher.CONTAINING);
+
+        Example<Course> example = Example.of(probe, matcher);
+        List<Course> courses = courseRepository.findAll(example);
+
+        assertThat(courses).isNotEmpty();
+        assertThat(courses).allMatch(course -> course.getTitle().toLowerCase().contains("spring"));
+    }
+
+    @Test
+    void specificationShouldSupportDynamicRangeAndExactFilters() {
+        Specification<Course> spec = (root, query, cb) -> cb.and(
+                cb.equal(root.get("published"), true),
+                cb.greaterThanOrEqualTo(root.get("price"), new BigDecimal("0.00")),
+                cb.lessThanOrEqualTo(root.get("price"), new BigDecimal("99999.99"))
+        );
+
+        Page<Course> page = courseRepository.findAll(spec, PageRequest.of(0, 5, Sort.by(Sort.Direction.DESC, "id")));
+
+        assertThat(page.getContent()).isNotEmpty();
+        assertThat(page.getContent()).allMatch(Course::getPublished);
     }
 }

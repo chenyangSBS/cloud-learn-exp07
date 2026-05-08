@@ -44,6 +44,9 @@
 - 批量课程上下架：`PATCH /api/courses/batch-publish`
 - SQL 榜单查询：`GET /api/courses/sql/hot?limit=5`
 - SQL 分类调价：`PATCH /api/courses/sql/category-price?categoryId=3&delta=10`
+- 分类 QBE 查询：`GET /api/categories/qbe?name=Java`
+- 课程 QBE 查询：`GET /api/courses/qbe?title=spring&teacher=张`
+- 课程 Specification 查询：`GET /api/courses/spec?minPrice=50&maxPrice=200&published=true`
 
 ---
 
@@ -429,6 +432,249 @@ mvn spring-boot:run
 
 ---
 
+## 🔍 同一组查询需求：方法名派生 vs QBE vs Specification
+
+很多同学会问：“我已经会写方法名派生查询了，为什么还要学 QBE 和 Specification？”最好的理解方式，是把它们放到同一组需求里对比。
+
+### 这组查询需求（同一个业务问题）
+
+在课程检索场景中，我们希望能支持这样的筛选组合：
+
+- 按标题关键词筛选（模糊匹配）
+- 按教师关键词筛选（模糊匹配，忽略大小写）
+- 按发布状态筛选（精确匹配）
+- 按价格区间筛选（范围查询）
+- 支持分页与排序（例如按 `id/price/lessonCount` 排序）
+
+你会发现：这是典型的“后台检索页”需求——条件多、组合多、并且经常变化。
+
+### 方式一：方法名派生查询（声明式查询语句）
+
+在本项目中，你已经能看到方法名派生的典型用法（例如教师关键词查询，对应接口 `GET /api/courses/teachers`）。
+
+它适合：
+
+- 条件固定且很少变化
+- “一个方法 = 一个常用查询”
+- 团队希望简单直观、快速落地
+
+它的瓶颈在于：
+
+- 一旦组合条件变多，你要么写很多方法名，要么开始纠结方法名怎么拼
+- 当需求出现“可选条件 + 组合变化”时，可维护性会迅速下降
+
+### 方式二：QBE（Query By Example）
+
+QBE 适合“输入什么字段就按什么字段过滤”的低耦合筛选场景：你只要构建一个带部分字段的“示例对象”，再配一个匹配器（例如：字符串包含、忽略大小写），框架就会自动把它翻译成查询条件。
+
+在本项目中，QBE 对应两个入口：
+
+- 分类 QBE：`GET /api/categories/qbe`
+- 课程 QBE：`GET /api/courses/qbe`
+
+示例入参（建议同学直接复制到浏览器或 Apifox）：
+
+- 分类 QBE：`GET /api/categories/qbe?name=Java&description=入门`
+- 课程 QBE：`GET /api/courses/qbe?title=spring&teacher=张&published=true&page=0&size=5`
+
+它的优势在于：
+
+- 不需要写 SQL/JPQL
+- 不需要为每种组合写一个方法名
+- 需求小改动时通常只改“示例对象 + 匹配规则”，仓库接口更稳定
+
+它的边界也很清晰：
+
+- 更擅长“等值/字符串匹配”这类条件
+- 对“范围查询、复杂 OR、跨表联查、聚合统计”等场景表达力有限
+
+所以你会看到：本项目让 QBE 覆盖“低耦合筛选”，而不是强行用它解决所有查询问题。
+
+### 方式三：Specification（JpaSpecificationExecutor + Criteria API）
+
+Specification 的定位是：当查询条件复杂、组合多、并且你需要更强的表达能力时，用它来动态构造查询。
+
+在本项目中，它对应：
+
+- `GET /api/courses/spec`
+
+示例入参（建议同学先从 3～5 个条件开始）：
+
+- `GET /api/courses/spec?titleKeyword=spring&teacherKeyword=陈&published=true&minPrice=50&maxPrice=200&page=0&size=5&sortBy=price&direction=asc`
+
+它适合：
+
+- 多条件组合（条件可以任意缺省）
+- 范围查询（价格区间、课时区间）
+- 更细粒度的控制（例如对不同字段使用不同匹配策略）
+- 可持续扩展的“后台检索页”
+
+你需要付出的代价是：
+
+- 写法比 QBE 更“工程化”，但换来的是更强的可控性与可扩展性
+
+### 如何在真实项目里做选择
+
+- 条件固定、业务常用：优先方法名派生查询
+- 条件可选、只做字符串/等值匹配：优先 QBE
+- 条件复杂、包含范围/组合/扩展性要求：优先 Specification
+
+
+---
+
+## 🧪 数据库事务实践：观察现象、理解原理
+
+本项目提供了一组“事务实验台”接口（统一前缀：`/api/tx-lab`）。建议同学按顺序调用，并且配合三件事一起观察：
+
+- 接口返回结果（success/message/data）
+- 控制台 SQL 日志（是否真的执行了 insert/update、是否提交）
+- H2 Console（最终数据是否落库）
+
+下面每个实验都给出三件信息：要观察什么现象、为什么会这样、它对应事务概念中的哪一项。
+
+### 1）传播行为（propagation）
+
+#### A. REQUIRED：同一事务里“要么都成功，要么都失败”
+
+接口：`GET /api/tx-lab/propagation/required`
+
+- 要观察什么
+  - 接口会返回内部抛出的异常信息
+  - `existsAfterCall` 预期为 `false`（外层插入也被回滚）
+- 为什么会这样
+  - `REQUIRED` 表示“加入当前事务”：内层方法不会开新事务，而是复用外层事务
+  - 内层抛出运行时异常会把整个事务标记为回滚
+- 对应概念
+  - `@Transactional(propagation = Propagation.REQUIRED)`（默认值）
+
+#### B. REQUIRES_NEW：内层独立事务，失败不会拖垮外层
+
+接口：`GET /api/tx-lab/propagation/requires-new`
+
+- 要观察什么
+  - `outerExistsAfterCall` 预期为 `true`
+  - `innerExistsAfterCall` 预期为 `false`
+- 为什么会这样
+  - `REQUIRES_NEW` 会挂起外层事务并开启新事务
+  - 内层事务失败只回滚自己的部分；外层事务继续提交
+- 对应概念
+  - `@Transactional(propagation = Propagation.REQUIRES_NEW)`
+
+#### C. NOT_SUPPORTED：挂起事务，用“非事务方式”执行
+
+接口：`GET /api/tx-lab/propagation/not-supported`
+
+- 要观察什么
+  - `countByNameDuringNotSupported` 预期为 `0`（内层查询看不到外层尚未提交的数据）
+  - `existsAfterCall` 预期为 `true`（外层事务最后提交）
+- 为什么会这样
+  - 外层虽然执行了写入并 flush，但事务未提交前对其他“事务/非事务视角”通常不可见
+  - `NOT_SUPPORTED` 会挂起当前事务，内层以非事务方式执行查询
+- 对应概念
+  - `@Transactional(propagation = Propagation.NOT_SUPPORTED)`
+
+### 2）回滚规则（rollbackFor / noRollbackFor）
+
+事务里“抛异常是否回滚”并不是简单的“抛了就回滚”。默认规则是：
+
+- 运行时异常（RuntimeException / Error）默认回滚
+- 受检异常（checked exception）默认不回滚
+
+#### A. 受检异常默认不回滚（默认提交）
+
+接口：`GET /api/tx-lab/rollback/checked-default`
+
+- 要观察什么
+  - 接口返回中会记录抛出了受检异常
+  - `existsAfterCall` 预期为 `true`（数据仍然落库）
+- 为什么会这样
+  - Spring 默认把“业务可预期的受检异常”视为不需要回滚的情况（可通过配置改变）
+- 对应概念
+  - `@Transactional` 默认回滚策略
+
+#### B. rollbackFor：显式指定“遇到受检异常也要回滚”
+
+接口：`GET /api/tx-lab/rollback/checked-rollback-for`
+
+- 要观察什么
+  - 接口返回中会记录抛出了受检异常
+  - `existsAfterCall` 预期为 `false`
+- 为什么会这样
+  - 通过 `rollbackFor` 把某类受检异常也纳入回滚集合
+- 对应概念
+  - `@Transactional(rollbackFor = SomeCheckedException.class)`
+
+#### C. noRollbackFor：显式指定“遇到运行时异常也不回滚”
+
+接口：`GET /api/tx-lab/rollback/no-rollback-for`
+
+- 要观察什么
+  - 接口会捕获到运行时异常
+  - `existsAfterCall` 预期为 `true`
+- 为什么会这样
+  - 通过 `noRollbackFor` 把某类运行时异常从回滚集合中排除
+- 对应概念
+  - `@Transactional(noRollbackFor = SomeRuntimeException.class)`
+
+### 3）readOnly / timeout：事务的“使用姿势”
+
+#### A. readOnly：提示优化“我只读，不修改”
+
+接口：`GET /api/tx-lab/read-only`
+
+- 要观察什么
+  - `existsAfterCall` 的结果可能因 JPA Provider 与 flush 行为不同而出现差异
+  - 建议同学用 H2 Console 验证最终是否落库
+- 为什么会这样
+  - `readOnly=true` 的核心意义是“提示框架优化”，并不等价于“绝对禁止写入”
+  - 是否真正禁止写，取决于底层数据库与 ORM 的实现策略
+- 对应概念
+  - `@Transactional(readOnly = true)`
+
+#### B. timeout：事务超时后通常会回滚
+
+接口：`GET /api/tx-lab/timeout`
+
+- 要观察什么
+  - 接口可能返回事务超时相关异常（不同环境异常类型可能不同）
+  - `existsAfterCall` 通常为 `false`（事务被判定超时并回滚）
+- 为什么会这样
+  - 事务超时相当于“给这段业务加了时间红线”，超过就中断并回滚，避免长事务占用连接与锁
+- 对应概念
+  - `@Transactional(timeout = N)`
+
+### 4）隔离级别（isolation）：并发下读到的数据“有多稳定”
+
+这一组实验会在两个线程里模拟：
+
+- A 事务：读同一条课程记录两次（firstRead / secondRead）
+- B 事务：在中间把课程标题改掉并提交
+
+#### A. READ_COMMITTED：可能出现“不可重复读”
+
+接口：`GET /api/tx-lab/isolation/read-committed`
+
+- 要观察什么
+  - `firstRead` 与 `secondRead` 可能不同（第二次读到了 B 已提交的新值）
+- 为什么会这样
+  - READ_COMMITTED 保证“不读到别人未提交的数据”，但允许读到“别人已提交的新数据”
+- 对应概念
+  - `@Transactional(isolation = Isolation.READ_COMMITTED)`（或数据库默认等价行为）
+
+#### B. REPEATABLE_READ：倾向保证“同一事务内多次读一致”
+
+接口：`GET /api/tx-lab/isolation/repeatable-read`
+
+- 要观察什么
+  - `firstRead` 与 `secondRead` 倾向相同（读到同一份快照）
+  - 注意：不同数据库对 REPEATABLE_READ 的实现差异较大，同学要以“现象 + 原因解释”为主
+- 为什么会这样
+  - REPEATABLE_READ 通常会让同一事务在多次读取时看到一致视图，从而减少不可重复读
+- 对应概念
+  - `@Transactional(isolation = Isolation.REPEATABLE_READ)`（或数据库支持的等价级别）
+
+---
+
 
 ## 📝 建议的课后练习
 
@@ -476,4 +722,3 @@ mvn spring-boot:run
 - 再根据业务场景选择合适的 Repository 能力
 - 再把业务规则放进 Service 层
 - 最后通过接口、日志和数据库三方共同验证结果
-

@@ -14,5 +14,7 @@ public interface CategoryService {
 
     List<CategoryResponse> getCategoryTree();
 
+    List<CategoryResponse> qbeSearch(String name, String description);
+
     void deleteById(Long categoryId);
 }
