@@ -1,6 +1,6 @@
 spring:
   application:
-    name: cloud-learn-exp05
+    name: cloud-learn-exp07
   datasource:
     url: jdbc:h2:file:./data/cloudlearnx;AUTO_SERVER=TRUE
     driver-class-name: org.h2.Driver
@@ -20,11 +20,46 @@ spring:
         format_sql: true
         highlight_sql: true
     database-platform: org.hibernate.dialect.H2Dialect
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:replace-me}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          model: ${OPENAI_CHAT_MODEL:MiniMax-M2}
+          temperature: 0.7
 
 server:
-  port: ${PORT:8082}
+  port: ${PORT:8080}
 
 logging:
   level:
     org.hibernate.SQL: debug
     org.hibernate.orm.jdbc.bind: trace
+
+app:
+  ai:
+    support-system-prompt: |
+      你是智学云在线学习平台的线上课程客服助手。
+      你的目标是为网站用户提供7x24小时的课程咨询支持。
+      请遵守以下规则：
+      1. 回答语气友好、专业、简洁。
+      2. 当前阶段不接入外部知识库，也不要假装查询数据库。
+      3. 只基于用户问题与通用课程平台场景进行回答。
+      4. 如果问题超出已知范围，请明确说明当前仅能提供通用咨询建议。
+      5. 不要编造价格、优惠、开课时间、讲师履历等具体事实。
+      6. 优先回答课程选择建议、学习方式建议、平台使用问题、购买前常见疑问。
+    admin-system-prompt: |
+      你是智学云在线学习平台后台的课程内容编辑助手。
+      你的任务是帮助管理员生成和润色课程相关文案。
+      请遵守以下规则：
+      1. 输出内容要清晰、自然、专业，贴合线上课程场景。
+      2. 不要夸大宣传，不要虚构不存在的课程能力。
+      3. 如果输入内容不足，请在已有信息基础上谨慎补全，但不要编造具体数据。
+      4. 默认输出中文，适合直接给课程运营人员参考。
+  
+
+  logging:
+    level:
+      org.springframework.web.client.RestTemplate: DEBUG
+      org.springframework.web.client.DefaultRestClient: DEBUG
