@@ -28,11 +28,11 @@ public class DbSupportChatHistory {
         if (!StringUtils.hasText(conversationId)) {
             return List.of();
         }
-        List<SupportChatMessage> latest = supportChatMessageRepository.findByConversationId(
+        List<SupportChatMessage> latest = new ArrayList<>(supportChatMessageRepository.findByConversationId(
                         conversationId,
                         PageRequest.of(0, MAX_MESSAGES_PER_CONVERSATION, Sort.by(Sort.Direction.DESC, "id"))
                 )
-                .getContent();
+                .getContent());
         Collections.reverse(latest);
 
         List<Message> messages = new ArrayList<>(latest.size());
